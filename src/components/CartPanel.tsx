@@ -5,11 +5,14 @@ interface CartPanelProps {
   cart: ShoppingCart
   isLoading: boolean
   isSaving: boolean
+  isCheckingOut: boolean
+  checkoutError: string
   onClose: () => void
   onQuantityChange: (productId: string, quantity: number) => void
   onRemove: (productId: string) => void
   onSave: () => void
   onClear: () => void
+  onCheckout: () => void
 }
 
 const formatCurrency = (value: number) =>
@@ -23,11 +26,14 @@ export function CartPanel({
   cart,
   isLoading,
   isSaving,
+  isCheckingOut,
+  checkoutError,
   onClose,
   onQuantityChange,
   onRemove,
   onSave,
   onClear,
+  onCheckout,
 }: CartPanelProps) {
   const total = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const units = cart.items.reduce((sum, item) => sum + item.quantity, 0)
@@ -91,10 +97,14 @@ export function CartPanel({
         </div>
 
         <div className="bag-actions">
-          <button className="pill-button pill-button--filled" type="button" onClick={onSave} disabled={isSaving || cart.items.length === 0}>
+          {checkoutError ? <p className="form-error" role="alert">{checkoutError}</p> : null}
+          <button className="pill-button pill-button--filled" type="button" onClick={onCheckout} disabled={isSaving || isCheckingOut || cart.items.length === 0}>
+            {isCheckingOut ? 'Procesando compra…' : 'Realizar compra'}
+          </button>
+          <button className="pill-button pill-button--light" type="button" onClick={onSave} disabled={isSaving || isCheckingOut || cart.items.length === 0}>
             {isSaving ? 'Guardando…' : 'Guardar selección'}
           </button>
-          <button className="bag-clear" type="button" onClick={onClear} disabled={isSaving || cart.items.length === 0}>
+          <button className="bag-clear" type="button" onClick={onClear} disabled={isSaving || isCheckingOut || cart.items.length === 0}>
             Vaciar bolsa
           </button>
         </div>

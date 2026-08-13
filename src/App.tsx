@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CartPanel } from './components/CartPanel'
+import { OrderConfirmation } from './components/OrderConfirmation'
 import { ProductCard } from './components/ProductCard'
 import { ProductModal } from './components/ProductModal'
-import { ApiError, basketApi, catalogApi } from './services/api'
-import type { Product, ProductFormData, ShoppingCart } from './types'
+import { ApiError, basketApi, catalogApi, ordersApi } from './services/api'
+import type { Order, Product, ProductFormData, ShoppingCart } from './types'
 import './styles.css'
 
 const DEFAULT_USER = 'Diana'
@@ -26,6 +27,9 @@ function App() {
   const [isLoadingCart, setIsLoadingCart] = useState(true)
   const [isSavingCart, setIsSavingCart] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
+  const [lastOrder, setLastOrder] = useState<Order | null>(null)
+  const [isCheckingOut, setIsCheckingOut] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -109,18 +113,18 @@ function App() {
       const existing = current.items.find((item) => item.productId === product.id)
       const items = existing
         ? current.items.map((item) =>
-            item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item,
-          )
+          item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item,
+        )
         : [
-            ...current.items,
-            {
-              productId: product.id,
-              productName: product.name,
-              price: product.price,
-              quantity: 1,
-              color: 'Predeterminado',
-            },
-          ]
+          ...current.items,
+          {
+            productId: product.id,
+            productName: product.name,
+            price: product.price,
+            quantity: 1,
+            color: 'Predeterminado',
+          },
+        ]
 
       return { ...current, items }
     })
@@ -148,15 +152,19 @@ function App() {
     }))
   }
 
-  const saveCart = async () => {
+  const saveCart = async (showFeedback = true) => {
     setIsSavingCart(true)
     try {
       await basketApi.storeBasket(cart)
       setBasketOnline(true)
-      showToast('success', 'Tu selección quedó guardada.')
+      if (showFeedback) showToast('success', 'Tu selección quedó guardada.')
     } catch (error) {
       setBasketOnline(false)
-      showToast('error', getFriendlyMessage(error, 'No fue posible guardar tu selección.'))
+      if (showFeedback) {
+        showToast('error', getFriendlyMessage(error, 'No fue posible guardar tu selección.'))
+      } else {
+        throw error
+      }
     } finally {
       setIsSavingCart(false)
     }
@@ -165,18 +173,39 @@ function App() {
   const clearCart = async () => {
     setIsSavingCart(true)
     try {
-      await basketApi.deleteBasket(userName)
-      setCart({ userName, items: [] })
+      await basketApi.deleteBasket(cart.userName)
+      setCart({ userName: cart.userName, items: [] })
       setBasketOnline(true)
       showToast('success', 'Tu bolsa quedó vacía.')
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
-        setCart({ userName, items: [] })
+        setCart({ userName: cart.userName, items: [] })
       } else {
         showToast('error', getFriendlyMessage(error, 'No fue posible vaciar tu bolsa.'))
       }
     } finally {
       setIsSavingCart(false)
+    }
+  }
+
+  const handleCheckout = async () => {
+    setIsCheckingOut(true)
+    setCheckoutError('')
+    try {
+      await saveCart(false)
+      const order = await ordersApi.createOrder(cart.userName, cart.userName)
+      setLastOrder(order)
+      try {
+        await basketApi.deleteBasket(cart.userName)
+      } catch (error) {
+        console.error('No fue posible vaciar el basket después de crear la orden.', error)
+      }
+      setCart({ userName: cart.userName, items: [] })
+      setIsCartOpen(false)
+    } catch (error) {
+      setCheckoutError(getFriendlyMessage(error, 'No fue posible realizar tu compra.'))
+    } finally {
+      setIsCheckingOut(false)
     }
   }
 
@@ -428,12 +457,17 @@ function App() {
         cart={cart}
         isLoading={isLoadingCart}
         isSaving={isSavingCart}
+        isCheckingOut={isCheckingOut}
+        checkoutError={checkoutError}
         onClose={() => setIsCartOpen(false)}
         onQuantityChange={updateQuantity}
         onRemove={removeFromCart}
         onSave={saveCart}
         onClear={clearCart}
+        onCheckout={handleCheckout}
       />
+
+      {lastOrder ? <OrderConfirmation order={lastOrder} onClose={() => setLastOrder(null)} /> : null}
 
       <ProductModal
         open={modalOpen}
